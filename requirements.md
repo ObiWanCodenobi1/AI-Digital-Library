@@ -316,3 +316,68 @@ This solution requires AI for several critical capabilities that cannot be achie
 4. WHEN an API call fails, THE System SHALL explain the error and suggest corrections based on documentation
 5. THE System SHALL allow developers to save playground sessions and share them with team members
 6. WHEN testing authenticated APIs, THE System SHALL provide secure credential management and token handling
+
+### Requirement 21: Chat with Book (RAG Interface)
+
+**User Story:** As a developer, I want to ask questions about specific book content and get instant answers with citations, so that I can quickly find information without manually searching through chapters.
+
+**AI Justification:** Traditional search requires knowing exact keywords and returns entire sections. RAG (Retrieval Augmented Generation) understands natural language questions, retrieves only relevant passages, and synthesizes coherent answers grounded in actual book content. This prevents AI hallucinations while providing conversational interaction that feels natural and efficient.
+
+#### Acceptance Criteria
+
+1. WHEN a user opens a book, THE System SHALL provide a "Chat with Book" interface for asking questions about the book's content
+2. WHEN a user asks a question, THE System SHALL use RAG to retrieve relevant book sections and generate an answer within 3 seconds
+3. WHEN displaying an answer, THE System SHALL include citations with chapter name, section name, and page number for each source used
+4. THE System SHALL maintain conversation context to support follow-up questions (e.g., "Tell me more about that" or "Can you give an example?")
+5. WHEN the answer cannot be found in the book, THE System SHALL explicitly state "This information is not covered in this book" rather than hallucinating
+6. THE System SHALL support multi-turn conversations with at least 10 message history for context
+7. WHEN a user asks about code examples, THE System SHALL extract and display the relevant code blocks with explanations
+8. THE Chat interface SHALL be available in all supported languages (English, Hindi, Tamil, Telugu, etc.)
+9. THE System SHALL allow users to save useful Q&A exchanges as bookmarks for future reference
+10. WHEN multiple sections of the book discuss the topic, THE System SHALL synthesize information from all relevant sections
+
+### Requirement 22: Quiz Generator ("Test Me" Feature)
+
+**User Story:** As a developer, I want to test my understanding of what I just read with AI-generated quizzes, so that I can verify my comprehension and identify knowledge gaps before moving forward.
+
+**AI Justification:** Creating effective assessment questions requires understanding key concepts, identifying common misconceptions, and generating plausible distractors. AI can analyze chapter content to automatically generate diverse, relevant questions at appropriate difficulty levels, adapting to user's skill level and learning progress—something impossible with static, pre-written quizzes.
+
+#### Acceptance Criteria
+
+1. WHEN a user finishes reading a chapter, THE System SHALL display a "Test Me" button to generate a quiz
+2. WHEN a user clicks "Test Me", THE System SHALL generate 5 multiple-choice questions based on the chapter content within 5 seconds
+3. WHEN generating questions, THE System SHALL include a mix of question types: conceptual understanding, code comprehension, best practices, and scenario-based questions
+4. WHEN displaying questions, THE System SHALL provide 4 answer options (A, B, C, D) with exactly one correct answer per question
+5. WHEN a user submits answers, THE System SHALL provide immediate feedback showing which answers were correct/incorrect
+6. WHEN displaying results, THE System SHALL show explanations for both correct and incorrect answers
+7. THE System SHALL calculate and display a score as a percentage (0-100%)
+8. WHEN a user scores below 60%, THE System SHALL identify knowledge gaps and recommend specific sections to review
+9. THE System SHALL save quiz results to the user's learning profile with timestamp and score
+10. THE System SHALL adapt question difficulty based on user's skill level (beginner/intermediate/advanced)
+11. WHEN a user retakes a quiz, THE System SHALL generate new questions on the same topics to prevent memorization
+12. THE System SHALL track quiz performance over time and show improvement trends
+13. THE Quiz interface SHALL be available in all supported languages with culturally appropriate examples
+14. WHEN generating code-based questions, THE System SHALL ensure code snippets are syntactically correct and runnable
+
+### Requirement 23: Multilingual Support
+
+**User Story:** As a non-English speaking developer, I want to access books, videos, and all platform features in my native language (Hindi, Tamil, Telugu, etc.), so that I can learn technical concepts without language barriers.
+
+**AI Justification:** Technical translation requires more than word-for-word conversion—it needs contextual understanding to preserve meaning while keeping code, APIs, and technical terms accurate. AI can perform context-aware translation that maintains technical accuracy, adapts explanations to cultural context, and generates natural-sounding narration in multiple languages, enabling true multilingual technical education at scale.
+
+#### Acceptance Criteria
+
+1. THE System SHALL support at least 7 Indian languages: English, Hindi, Tamil, Telugu, Kannada, Bengali, Marathi, and Gujarati
+2. WHEN a user selects a preferred language, THE System SHALL translate all UI elements, book content, and generated content to that language
+3. WHEN translating technical content, THE System SHALL preserve code blocks, variable names, API names, and technical terms in English
+4. WHEN translating book content, THE System SHALL use AI (Claude 3) for context-aware translation that maintains technical accuracy
+5. THE System SHALL cache translated content in ElastiCache Redis for instant access on subsequent requests
+6. WHEN generating videos in non-English languages, THE System SHALL use Amazon Polly with appropriate neural voices (e.g., 'Aditi' for Hindi, 'Anjali' for Tamil)
+7. WHEN a user switches language mid-session, THE System SHALL preserve their reading position and progress
+8. THE "Chat with Book" feature SHALL support questions and answers in all supported languages
+9. THE "Test Me" quiz feature SHALL generate questions and explanations in the user's selected language
+10. WHEN translating, THE System SHALL maintain formatting including headings, bullet points, code blocks, and diagrams
+11. THE System SHALL provide language-specific examples and analogies that resonate with local developer communities
+12. WHEN a translation is not available, THE System SHALL fall back to English and notify the user
+13. THE System SHALL track translation quality and allow users to report translation issues
+14. WHEN generating content (videos/presentations), THE System SHALL support creating content directly in any supported language, not just translating from English

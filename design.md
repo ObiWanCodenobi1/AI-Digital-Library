@@ -614,6 +614,570 @@ type SlideLayout = 'title' | 'content' | 'two_column' | 'code_focus' | 'diagram_
 - Visual hierarchy: Apply design principles for readability
 - Code formatting: Use syntax highlighting appropriate to language
 
+### 8. Chat with Book Service (RAG Interface)
+
+**Responsibility**: Provide conversational interface for asking questions about specific book content using Retrieval Augmented Generation.
+
+**Interface:**
+```typescript
+interface ChatWithBookService {
+  // Start a new chat session with a book
+  startChatSession(userId: string, bookId: string): Promise<ChatSession>
+  
+  // Ask a question about the book
+  askQuestion(sessionId: string, question: string): Promise<ChatResponse>
+  
+  // Get chat history
+  getChatHistory(sessionId: string): Promise<Message[]>
+  
+  // Save Q&A as bookmark
+  saveQABookmark(sessionId: string, messageId: string, title: string): Promise<Bookmark>
+}
+
+interface ChatSession {
+  sessionId: string
+  userId: string
+  bookId: string
+  bookTitle: string
+  startedAt: Date
+  messageCount: number
+  language: string
+}
+
+interface ChatResponse {
+  messageId: string
+  answer: string
+  citations: Citation[]
+  relevantSections: BookSection[]
+  confidence: number  // 0-1 score
+  processingTime: number  // milliseconds
+}
+
+interface Citation {
+  chapterNumber: number
+  chapterTitle: string
+  sectionTitle: string
+  pageNumber: number
+  excerpt: string
+  relevanceScore: number
+}
+
+interface BookSection {
+  sectionId: string
+  content: string
+  chapterTitle: string
+  pageNumber: number
+}
+```
+
+**Dependencies:**
+- AWS Bedrock (Titan Embeddings for question vectorization, Claude 3 for answer generation)
+- Amazon OpenSearch (for vector similarity search within book content)
+- DynamoDB (for storing chat sessions and history)
+- ElastiCache Redis (for caching frequent questions and embeddings)
+
+**Key Algorithms:**
+- **RAG Pipeline**: 
+  1. Convert question to embedding using Titan
+  2. Perform k-NN search in OpenSearch for top 5 relevant book sections
+  3. Pass retrieved sections as context to Claude 3
+  4. Generate answer grounded in retrieved content
+  5. Extract citations from context used in answer
+- **Context Window Management**: Maintain last 10 messages for follow-up questions
+- **Hallucination Prevention**: Instruct Claude 3 to only use provided context, explicitly state when information not found
+- **Multi-language Support**: Translate question to English for retrieval, translate answer back to user's language
+
+**RAG Implementation Details:**
+```typescript
+async askQuestion(sessionId: string, question: string) {
+  const session = await getChatSession(sessionId);
+  const history = await getChatHistory(sessionId);
+  
+  // Generate embedding for question
+  const questionEmbedding = await bedrock.generateEmbedding(question);
+  
+  // Retrieve relevant sections using k-NN search
+  const relevantSections = await opensearch.knnSearch({
+    index: `book-${session.bookId}`,
+    vector: questionEmbedding,
+    k: 5,
+    minScore: 0.7  // Only high-relevance sections
+  });
+  
+  // Build context from retrieved sections
+  const context = relevantSections.map(section => `
+    [Chapter ${section.chapterNumber}: ${section.chapterTitle}]
+    [Section: ${section.sectionTitle}]
+    [Page ${section.pageNumber}]
+    
+    ${section.content}
+  `).join('\n\n---\n\n');
+  
+  // Generate answer using Claude 3 with RAG context
+  const prompt = `You are a helpful assistant answering questions about the book "${session.bookTitle}".
+
+CRITICAL RULES:
+1. Use ONLY the provided context to answer
+2. If the answer is not in the context, say "This information is not covered in this book"
+3. Include specific citations (chapter, section, page) in your answer
+4. If code examples are relevant, include them in your answer
+
+Context from the book:
+${context}
+
+Conversation history:
+${history.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
+
+User question: ${question}
+
+Provide a clear, accurate answer with citations.`;
+
+  const answer = await claude3.invoke(prompt, {
+    temperature: 0.3,  // Lower temperature for factual accuracy
+    maxTokens: 1000
+  });
+  
+  // Extract citations
+  const citations = relevantSections.map(section => ({
+    chapterNumber: section.chapterNumber,
+    chapterTitle: section.chapterTitle,
+    sectionTitle: section.sectionTitle,
+    pageNumber: section.pageNumber,
+    excerpt: section.content.substring(0, 200) + '...',
+    relevanceScore: section.score
+  }));
+  
+  // Save to chat history
+  await saveChatMessage(sessionId, {
+    role: 'user',
+    content: question,
+    timestamp: new Date()
+  });
+  
+  await saveChatMessage(sessionId, {
+    role: 'assistant',
+    content: answer,
+    citations,
+    timestamp: new Date()
+  });
+  
+  return {
+    messageId: generateId(),
+    answer,
+    citations,
+    relevantSections,
+    confidence: calculateConfidence(relevantSections),
+    processingTime: Date.now() - startTime
+  };
+}
+```
+
+### 9. Quiz Generator Service
+
+**Responsibility**: Generate adaptive quizzes based on chapter content to assess user understanding and identify knowledge gaps.
+
+**Interface:**
+```typescript
+interface QuizGeneratorService {
+  // Generate quiz for a chapter
+  generateQuiz(bookId: string, chapterId: string, userId: string): Promise<Quiz>
+  
+  // Submit quiz answers and get results
+  submitQuiz(quizId: string, answers: Answer[]): Promise<QuizResult>
+  
+  // Get quiz history for user
+  getQuizHistory(userId: string, bookId?: string): Promise<QuizAttempt[]>
+  
+  // Regenerate quiz with new questions
+  regenerateQuiz(originalQuizId: string): Promise<Quiz>
+}
+
+interface Quiz {
+  quizId: string
+  bookId: string
+  chapterId: string
+  chapterTitle: string
+  questions: Question[]
+  timeLimit: number  // seconds
+  passingScore: number  // percentage
+  difficulty: 'beginner' | 'intermediate' | 'advanced'
+  createdAt: Date
+}
+
+interface Question {
+  questionId: string
+  questionText: string
+  questionType: 'conceptual' | 'code' | 'scenario' | 'best_practice' | 'comparison'
+  codeSnippet?: string
+  options: QuestionOption[]
+  correctAnswer: string  // Option ID
+  topic: string  // e.g., "dependency injection", "async/await"
+  difficulty: number  // 1-5
+}
+
+interface QuestionOption {
+  optionId: string  // 'A', 'B', 'C', 'D'
+  text: string
+  isCorrect: boolean
+}
+
+interface QuizResult {
+  quizId: string
+  userId: string
+  score: number  // 0-100
+  correctAnswers: number
+  totalQuestions: number
+  timeSpent: number  // seconds
+  results: QuestionResult[]
+  weakAreas: string[]  // Topics where user struggled
+  recommendation: string
+  passed: boolean
+  completedAt: Date
+}
+
+interface QuestionResult {
+  questionId: string
+  isCorrect: boolean
+  selectedAnswer: string
+  correctAnswer: string
+  explanation: string
+  topic: string
+}
+```
+
+**Dependencies:**
+- AWS Bedrock (Claude 3 for question generation and evaluation)
+- DynamoDB (for storing quizzes and results)
+- ElastiCache Redis (for caching generated quizzes)
+
+**Key Algorithms:**
+- **Content Analysis**: Use Claude 3 to identify key concepts, code patterns, and best practices in chapter
+- **Question Generation**: Generate diverse question types covering different cognitive levels (recall, understanding, application)
+- **Distractor Generation**: Create plausible wrong answers based on common misconceptions
+- **Adaptive Difficulty**: Adjust question complexity based on user's skill level and past performance
+- **Knowledge Gap Identification**: Analyze incorrect answers to identify specific topics needing review
+- **Spaced Repetition**: Track topics and schedule re-testing at optimal intervals
+
+**Quiz Generation Implementation:**
+```typescript
+async generateQuiz(bookId: string, chapterId: string, userId: string) {
+  // Get chapter content
+  const chapter = await getChapterContent(bookId, chapterId);
+  const userProfile = await getUserProfile(userId);
+  
+  // Check cache for similar quiz
+  const cacheKey = `quiz:${bookId}:${chapterId}:${userProfile.skillLevel}`;
+  const cached = await redis.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+  
+  // Generate quiz using Claude 3
+  const quizSchema = {
+    type: "object",
+    properties: {
+      questions: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            questionText: { type: "string" },
+            questionType: { type: "string", enum: ["conceptual", "code", "scenario", "best_practice", "comparison"] },
+            codeSnippet: { type: "string" },
+            options: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  optionId: { type: "string" },
+                  text: { type: "string" }
+                }
+              }
+            },
+            correctAnswer: { type: "string" },
+            correctExplanation: { type: "string" },
+            wrongExplanations: { type: "object" },
+            topic: { type: "string" },
+            difficulty: { type: "number" }
+          }
+        }
+      }
+    }
+  };
+  
+  const prompt = `Generate a 5-question multiple-choice quiz for this technical chapter.
+
+Chapter: ${chapter.title}
+Content: ${chapter.content}
+
+User skill level: ${userProfile.skillLevel}
+User's weak areas: ${userProfile.weakAreas.join(', ')}
+
+Requirements:
+1. Generate exactly 5 questions
+2. Mix question types: 2 conceptual, 1 code comprehension, 1 scenario-based, 1 best practice
+3. Each question has 4 options (A, B, C, D) with exactly 1 correct answer
+4. Difficulty appropriate for ${userProfile.skillLevel} level
+5. Focus on key concepts and practical application
+6. If chapter has code examples, include at least 1 code-based question
+7. Create plausible distractors based on common misconceptions
+
+For each question provide:
+- questionText: Clear, unambiguous question
+- questionType: Type of question
+- codeSnippet: Code block if applicable
+- options: Array of 4 options with optionId (A/B/C/D) and text
+- correctAnswer: The optionId of correct answer
+- correctExplanation: Why this answer is correct
+- wrongExplanations: Object mapping wrong optionIds to explanations
+- topic: Specific topic being tested (e.g., "async/await", "dependency injection")
+- difficulty: 1-5 scale
+
+Return valid JSON matching the schema.`;
+
+  const quizData = await claude3.invokeStructured(prompt, quizSchema);
+  
+  const quiz: Quiz = {
+    quizId: generateId(),
+    bookId,
+    chapterId,
+    chapterTitle: chapter.title,
+    questions: quizData.questions.map(q => ({
+      questionId: generateId(),
+      questionText: q.questionText,
+      questionType: q.questionType,
+      codeSnippet: q.codeSnippet,
+      options: q.options.map(opt => ({
+        optionId: opt.optionId,
+        text: opt.text,
+        isCorrect: opt.optionId === q.correctAnswer
+      })),
+      correctAnswer: q.correctAnswer,
+      topic: q.topic,
+      difficulty: q.difficulty
+    })),
+    timeLimit: 300,  // 5 minutes
+    passingScore: 60,
+    difficulty: userProfile.skillLevel,
+    createdAt: new Date()
+  };
+  
+  // Cache for 1 hour
+  await redis.setex(cacheKey, 3600, JSON.stringify(quiz));
+  
+  return quiz;
+}
+
+async submitQuiz(quizId: string, answers: Answer[]) {
+  const quiz = await getQuiz(quizId);
+  const startTime = quiz.startedAt;
+  const endTime = new Date();
+  
+  // Evaluate each answer
+  const results: QuestionResult[] = answers.map((answer, idx) => {
+    const question = quiz.questions[idx];
+    const isCorrect = answer.selectedOption === question.correctAnswer;
+    
+    // Get appropriate explanation
+    const explanation = isCorrect
+      ? question.correctExplanation
+      : question.wrongExplanations[answer.selectedOption];
+    
+    return {
+      questionId: question.questionId,
+      isCorrect,
+      selectedAnswer: answer.selectedOption,
+      correctAnswer: question.correctAnswer,
+      explanation,
+      topic: question.topic
+    };
+  });
+  
+  // Calculate score
+  const correctCount = results.filter(r => r.isCorrect).length;
+  const score = (correctCount / results.length) * 100;
+  const passed = score >= quiz.passingScore;
+  
+  // Identify weak areas
+  const weakAreas = results
+    .filter(r => !r.isCorrect)
+    .map(r => r.topic)
+    .filter((topic, idx, arr) => arr.indexOf(topic) === idx);  // Unique topics
+  
+  // Generate recommendation
+  const recommendation = generateRecommendation(score, weakAreas, quiz.chapterTitle);
+  
+  // Update user learning profile
+  await updateLearningProfile(userId, {
+    bookId: quiz.bookId,
+    chapterId: quiz.chapterId,
+    quizScore: score,
+    weakAreas,
+    completedAt: endTime
+  });
+  
+  // Save quiz attempt
+  const quizResult: QuizResult = {
+    quizId,
+    userId,
+    score,
+    correctAnswers: correctCount,
+    totalQuestions: results.length,
+    timeSpent: (endTime.getTime() - startTime.getTime()) / 1000,
+    results,
+    weakAreas,
+    recommendation,
+    passed,
+    completedAt: endTime
+  };
+  
+  await saveQuizAttempt(quizResult);
+  
+  return quizResult;
+}
+
+function generateRecommendation(score: number, weakAreas: string[], chapterTitle: string): string {
+  if (score >= 80) {
+    return `Excellent work! You've mastered ${chapterTitle}. Ready to move to the next chapter.`;
+  } else if (score >= 60) {
+    return `Good job! You passed, but consider reviewing these topics: ${weakAreas.join(', ')}`;
+  } else {
+    return `Review needed. Focus on these areas before moving forward: ${weakAreas.join(', ')}. Try re-reading the relevant sections and take the quiz again.`;
+  }
+}
+```
+
+### 10. Translation Service (Multilingual Support)
+
+**Responsibility**: Provide real-time translation of all content (books, UI, videos, quizzes) to multiple Indian languages while preserving technical accuracy.
+
+**Interface:**
+```typescript
+interface TranslationService {
+  // Translate text content
+  translateText(text: string, targetLanguage: string, contentType: 'ui' | 'book' | 'technical'): Promise<string>
+  
+  // Translate book chapter
+  translateChapter(bookId: string, chapterId: string, targetLanguage: string): Promise<TranslatedChapter>
+  
+  // Generate multilingual video narration
+  generateNarration(script: string, language: string): Promise<AudioBuffer>
+  
+  // Get supported languages
+  getSupportedLanguages(): Promise<Language[]>
+  
+  // Report translation issue
+  reportTranslationIssue(contentId: string, issue: TranslationIssue): Promise<void>
+}
+
+interface TranslatedChapter {
+  chapterId: string
+  originalLanguage: string
+  targetLanguage: string
+  translatedContent: string
+  preservedElements: PreservedElement[]  // Code blocks, API names, etc.
+  translatedAt: Date
+  cacheKey: string
+}
+
+interface PreservedElement {
+  type: 'code' | 'api' | 'variable' | 'command'
+  originalText: string
+  position: number
+}
+
+interface Language {
+  code: string  // 'en', 'hi', 'ta', 'te', etc.
+  name: string  // 'English', 'Hindi', 'Tamil', 'Telugu'
+  nativeName: string  // 'English', 'हिन्दी', 'தமிழ்', 'తెలుగు'
+  pollyVoiceId: string  // Amazon Polly voice
+  pollyEngine: 'standard' | 'neural'
+  supported: boolean
+}
+```
+
+**Dependencies:**
+- AWS Bedrock (Claude 3 for context-aware translation)
+- Amazon Polly (for text-to-speech in multiple languages)
+- AWS Translate (fallback for languages not well-supported by Claude 3)
+- ElastiCache Redis (for caching translations)
+- DynamoDB (for storing translation quality feedback)
+
+**Key Algorithms:**
+- **Context-Aware Translation**: Use Claude 3 to understand technical context and translate appropriately
+- **Element Preservation**: Identify and preserve code blocks, API names, variable names, commands
+- **Cultural Adaptation**: Adjust examples and analogies to be culturally relevant
+- **Quality Assurance**: Track translation quality through user feedback
+- **Cache Strategy**: Cache translations for 30 days, invalidate on content updates
+
+**Translation Implementation:**
+```typescript
+async translateText(text: string, targetLanguage: string, contentType: 'ui' | 'book' | 'technical') {
+  // Check cache first
+  const cacheKey = `translation:${hash(text)}:${targetLanguage}:${contentType}`;
+  const cached = await redis.get(cacheKey);
+  if (cached) return cached;
+  
+  // Use Claude 3 for context-aware translation
+  const prompt = `Translate the following ${contentType} content to ${targetLanguage}.
+
+CRITICAL RULES:
+1. Keep all code blocks, variable names, function names, and API names in English
+2. Preserve markdown formatting (headers, lists, code blocks)
+3. Maintain technical accuracy - don't simplify technical terms
+4. Use appropriate technical terminology in ${targetLanguage}
+5. For code comments, translate the comment but keep code syntax
+6. Preserve all URLs, file paths, and command-line instructions
+7. Adapt examples to be culturally relevant when appropriate
+
+Content to translate:
+${text}
+
+Return only the translated text, maintaining all formatting.`;
+
+  const translated = await claude3.invoke(prompt, {
+    temperature: 0.2,  // Low temperature for consistent translation
+    maxTokens: text.length * 2  // Account for language expansion
+  });
+  
+  // Cache for 30 days
+  await redis.setex(cacheKey, 2592000, translated);
+  
+  return translated;
+}
+
+async generateNarration(script: string, language: string) {
+  const languageConfig = getLanguageConfig(language);
+  
+  // Use Amazon Polly for text-to-speech
+  const params = {
+    Text: script,
+    VoiceId: languageConfig.pollyVoiceId,
+    LanguageCode: languageConfig.code,
+    Engine: languageConfig.pollyEngine,
+    OutputFormat: 'mp3',
+    TextType: 'text'
+  };
+  
+  const audio = await polly.synthesizeSpeech(params);
+  
+  return audio.AudioStream;
+}
+
+function getLanguageConfig(language: string): Language {
+  const languages: Record<string, Language> = {
+    'en': { code: 'en-US', name: 'English', nativeName: 'English', pollyVoiceId: 'Joanna', pollyEngine: 'neural', supported: true },
+    'hi': { code: 'hi-IN', name: 'Hindi', nativeName: 'हिन्दी', pollyVoiceId: 'Aditi', pollyEngine: 'neural', supported: true },
+    'ta': { code: 'ta-IN', name: 'Tamil', nativeName: 'தமிழ்', pollyVoiceId: 'Anjali', pollyEngine: 'standard', supported: true },
+    'te': { code: 'te-IN', name: 'Telugu', nativeName: 'తెలుగు', pollyVoiceId: 'Aditi', pollyEngine: 'standard', supported: true },
+    'kn': { code: 'kn-IN', name: 'Kannada', nativeName: 'ಕನ್ನಡ', pollyVoiceId: 'Aditi', pollyEngine: 'standard', supported: true },
+    'bn': { code: 'bn-IN', name: 'Bengali', nativeName: 'বাংলা', pollyVoiceId: 'Aditi', pollyEngine: 'standard', supported: true },
+    'mr': { code: 'mr-IN', name: 'Marathi', nativeName: 'मराठी', pollyVoiceId: 'Aditi', pollyEngine: 'standard', supported: true },
+    'gu': { code: 'gu-IN', name: 'Gujarati', nativeName: 'ગુજરાતી', pollyVoiceId: 'Aditi', pollyEngine: 'standard', supported: true }
+  };
+  
+  return languages[language] || languages['en'];
+}
+```
+
 ## Data Models
 
 ### AWS Infrastructure Overview
@@ -871,6 +1435,146 @@ interface CacheEntry {
 // - book:{bookId}:metadata -> Book
 ```
 
+### Chat Session Model
+```typescript
+interface ChatSession {
+  sessionId: string
+  userId: string
+  bookId: string
+  bookTitle: string
+  language: string
+  startedAt: Date
+  lastMessageAt: Date
+  messageCount: number
+  messages: ChatMessage[]
+}
+
+interface ChatMessage {
+  messageId: string
+  role: 'user' | 'assistant'
+  content: string
+  citations?: Citation[]
+  relevantSections?: string[]  // Section IDs
+  confidence?: number
+  timestamp: Date
+}
+
+interface Citation {
+  chapterNumber: number
+  chapterTitle: string
+  sectionTitle: string
+  pageNumber: number
+  excerpt: string
+  relevanceScore: number
+}
+```
+
+### Quiz Model
+```typescript
+interface Quiz {
+  quizId: string
+  bookId: string
+  chapterId: string
+  chapterTitle: string
+  userId: string
+  questions: QuizQuestion[]
+  timeLimit: number  // seconds
+  passingScore: number  // percentage
+  difficulty: 'beginner' | 'intermediate' | 'advanced'
+  language: string
+  createdAt: Date
+  startedAt?: Date
+}
+
+interface QuizQuestion {
+  questionId: string
+  questionText: string
+  questionType: 'conceptual' | 'code' | 'scenario' | 'best_practice' | 'comparison'
+  codeSnippet?: string
+  options: QuizOption[]
+  correctAnswer: string  // Option ID (A, B, C, D)
+  correctExplanation: string
+  wrongExplanations: Record<string, string>  // optionId -> explanation
+  topic: string
+  difficulty: number  // 1-5
+}
+
+interface QuizOption {
+  optionId: string  // 'A', 'B', 'C', 'D'
+  text: string
+  isCorrect: boolean
+}
+
+interface QuizAttempt {
+  attemptId: string
+  quizId: string
+  userId: string
+  bookId: string
+  chapterId: string
+  score: number  // 0-100
+  correctAnswers: number
+  totalQuestions: number
+  timeSpent: number  // seconds
+  results: QuestionResult[]
+  weakAreas: string[]
+  recommendation: string
+  passed: boolean
+  completedAt: Date
+}
+
+interface QuestionResult {
+  questionId: string
+  isCorrect: boolean
+  selectedAnswer: string
+  correctAnswer: string
+  explanation: string
+  topic: string
+}
+```
+
+### Translation Model
+```typescript
+interface Translation {
+  translationId: string
+  contentId: string  // Book ID, chapter ID, or content ID
+  contentType: 'book' | 'chapter' | 'ui' | 'video' | 'quiz'
+  sourceLanguage: string
+  targetLanguage: string
+  originalText: string
+  translatedText: string
+  preservedElements: PreservedElement[]
+  translatedAt: Date
+  translatedBy: 'claude3' | 'aws-translate'
+  qualityScore?: number  // User feedback
+  cacheKey: string
+}
+
+interface PreservedElement {
+  type: 'code' | 'api' | 'variable' | 'command' | 'url'
+  originalText: string
+  startPosition: number
+  endPosition: number
+}
+
+interface TranslationFeedback {
+  feedbackId: string
+  translationId: string
+  userId: string
+  issueType: 'inaccurate' | 'unnatural' | 'technical_error' | 'formatting'
+  description: string
+  suggestedTranslation?: string
+  reportedAt: Date
+}
+
+interface LanguagePreference {
+  userId: string
+  preferredLanguage: string
+  fallbackLanguage: string
+  autoTranslate: boolean
+  updatedAt: Date
+}
+```
+
 
 ## Correctness Properties
 
@@ -1026,6 +1730,96 @@ interface CacheEntry {
 
 **Validates: Requirements 11.5**
 
+### Property 26: Chat Response Time
+
+*For any* question asked in "Chat with Book" interface, the system should return an answer within 3 seconds with at least one citation.
+
+**Validates: Requirements 21.2**
+
+### Property 27: RAG Citation Accuracy
+
+*For any* answer provided by the Chat with Book feature, all citations should reference actual content from the book (chapter, section, and page numbers must be valid).
+
+**Validates: Requirements 21.3**
+
+### Property 28: RAG Hallucination Prevention
+
+*For any* question whose answer is not in the book, the system should explicitly state "This information is not covered in this book" rather than generating an answer.
+
+**Validates: Requirements 21.5**
+
+### Property 29: Chat Context Retention
+
+*For any* follow-up question in a chat session, the system should maintain context from previous messages (at least last 10 messages).
+
+**Validates: Requirements 21.4, 21.6**
+
+### Property 30: Quiz Generation Time
+
+*For any* chapter, clicking "Test Me" should generate a quiz with 5 questions within 5 seconds.
+
+**Validates: Requirements 22.2**
+
+### Property 31: Quiz Question Structure
+
+*For any* generated quiz, every question should have exactly 4 options (A, B, C, D) with exactly one correct answer.
+
+**Validates: Requirements 22.4**
+
+### Property 32: Quiz Feedback Completeness
+
+*For any* submitted quiz, the system should provide explanations for both correct and incorrect answers for all questions.
+
+**Validates: Requirements 22.6**
+
+### Property 33: Quiz Score Calculation
+
+*For any* quiz submission, the score should be calculated as (correct answers / total questions) * 100, resulting in a value between 0 and 100.
+
+**Validates: Requirements 22.7**
+
+### Property 34: Knowledge Gap Identification
+
+*For any* quiz with score below 60%, the system should identify at least one specific topic for review based on incorrect answers.
+
+**Validates: Requirements 22.8**
+
+### Property 35: Quiz Uniqueness on Retake
+
+*For any* quiz retaken by the same user, the system should generate new questions (not identical to previous attempt) on the same topics.
+
+**Validates: Requirements 22.11**
+
+### Property 36: Translation Preservation
+
+*For any* translated technical content, all code blocks, variable names, API names, and commands should remain in English (untranslated).
+
+**Validates: Requirements 23.3**
+
+### Property 37: Translation Cache Efficiency
+
+*For any* content translated once, requesting the same translation again should return cached results instantly without calling translation API.
+
+**Validates: Requirements 23.5**
+
+### Property 38: Multilingual Video Narration
+
+*For any* video generated in a non-English language, the narration should use the appropriate Amazon Polly voice for that language.
+
+**Validates: Requirements 23.6**
+
+### Property 39: Language Persistence
+
+*For any* user who switches language mid-session, their reading position and progress should be preserved.
+
+**Validates: Requirements 23.7**
+
+### Property 40: Multilingual Feature Parity
+
+*For any* supported language, both "Chat with Book" and "Test Me" features should be fully functional in that language.
+
+**Validates: Requirements 23.8, 23.9**
+
 ## Error Handling
 
 ### Error Categories
@@ -1117,6 +1911,40 @@ interface ErrorResponse {
 - Include confidence scores in responses
 - Flag low-confidence claims with warnings
 - Allow users to report inaccuracies
+
+**Scenario 6: Chat with Book - No Relevant Content Found**
+- Status: 200 OK (successful request)
+- Response: "This information is not covered in this book"
+- Suggest related topics that are covered
+- Offer to search across all books instead
+
+**Scenario 7: Quiz Generation Failure**
+- Status: 500 Internal Server Error
+- If Claude 3 fails to generate valid questions
+- Retry with simplified prompt
+- If still fails, offer pre-generated quiz from cache
+- Log error for manual review
+
+**Scenario 8: Translation Service Unavailable**
+- Status: 503 Service Unavailable
+- Fall back to English content
+- Display notification: "Translation temporarily unavailable"
+- Cache request to retry when service recovers
+- Allow user to continue in English
+
+**Scenario 9: Invalid Quiz Submission**
+- Status: 400 Bad Request
+- User submits answers for wrong quiz ID
+- User submits incomplete answers
+- Quiz time limit exceeded
+- Provide clear error message and allow retry
+
+**Scenario 10: RAG Context Too Large**
+- Not an HTTP error, internal handling
+- If retrieved book sections exceed Claude 3 context window
+- Truncate to most relevant sections (top 3 instead of 5)
+- Prioritize by relevance score
+- Include disclaimer: "Answer based on most relevant sections"
 
 ## Testing Strategy
 
@@ -1215,6 +2043,54 @@ Property Tests:
 - Property 20: Content recommendations are generated
 - Property 21: Team reports have required fields
 
+**5. Chat with Book (RAG) Testing**
+
+Unit Tests:
+- Starting chat session creates session record
+- Asking question returns answer with citations
+- Follow-up questions maintain context
+- Questions about non-existent content return "not covered" message
+- Saving Q&A as bookmark works correctly
+
+Property Tests:
+- Property 26: All chat responses within 3 seconds
+- Property 27: All citations reference valid book content
+- Property 28: No hallucinations (answers only from book)
+- Property 29: Context retained for follow-up questions
+
+**6. Quiz Generator Testing**
+
+Unit Tests:
+- Generating quiz creates 5 questions
+- Each question has exactly 4 options
+- Submitting answers calculates correct score
+- Weak areas identified from incorrect answers
+- Retaking quiz generates new questions
+
+Property Tests:
+- Property 30: Quiz generation within 5 seconds
+- Property 31: All questions have 4 options, 1 correct
+- Property 32: Explanations provided for all answers
+- Property 33: Score calculation is accurate (0-100)
+- Property 34: Knowledge gaps identified for low scores
+- Property 35: Retaken quizzes have different questions
+
+**7. Translation Service Testing**
+
+Unit Tests:
+- Translating text preserves code blocks
+- Translating to Hindi uses correct Polly voice
+- Switching language preserves reading position
+- Translation cache works correctly
+- Reporting translation issues saves feedback
+
+Property Tests:
+- Property 36: Code/API names preserved in translation
+- Property 37: Cached translations return instantly
+- Property 38: Correct Polly voice for each language
+- Property 39: Language switch preserves progress
+- Property 40: All features work in all languages
+
 ### Integration Testing
 
 **End-to-End Workflows:**
@@ -1222,6 +2098,10 @@ Property Tests:
 2. User generates video → receives notification → downloads video
 3. Team member shares content → other members receive recommendations
 4. User asks question → receives answer with citations → follows up
+5. User reads chapter → clicks "Test Me" → takes quiz → reviews weak areas → re-reads sections → retakes quiz
+6. User switches to Hindi → content translates → chats with book in Hindi → takes quiz in Hindi
+7. User opens book → starts chat → asks multiple questions → saves useful Q&A as bookmarks
+8. User completes chapter → takes quiz → scores low → system recommends review → user chats with book about weak topics → retakes quiz → passes
 
 **External Service Mocking:**
 - Mock OpenAI API responses for consistent testing
