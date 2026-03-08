@@ -1,411 +1,360 @@
 # Testing Guide - AI-Enabled Digital Library
 
-This guide explains how to test all the components that have been built so far.
+This guide explains how to run and test all components of the AI-Enabled Digital Library.
 
-## What's Been Built
+## Prerequisites
 
-### ✅ Frontend (Phase 3 Complete)
-- React + TypeScript + Vite setup
-- TailwindCSS styling
-- React Router navigation
-- Authentication UI (Login/Signup pages)
-- Protected routes
-- Core layout components (Header, Footer, Sidebar)
-- Error boundaries and loading states
-- API client with Axios
-- React Query setup
+Before running tests, ensure you have:
+- Node.js (v18 or higher)
+- npm installed
+- AWS credentials configured (for integration tests)
 
-### ✅ Backend (Task 4 Complete)
-- Bedrock integration service (with caching)
-- Search service with OpenSearch k-NN
-- Ranking service for personalized results
-- Query service (disambiguation, expansion)
-- Explanation service (AI-generated)
-- Lambda handlers for search, suggestions, interactions
-- Comprehensive test suite
+## Installation
 
----
+### 1. Install Backend Dependencies
 
-## Testing the Frontend
+```bash
+cd backend
+npm install
+```
 
-### 1. Install Dependencies
+### 2. Install Frontend Dependencies
 
 ```bash
 cd frontend
 npm install
 ```
 
-### 2. Run Development Server
+### 3. Install Root Dependencies (for tests)
+
+```bash
+npm install
+```
+
+## Running Tests
+
+### Backend Unit Tests
+
+Run all unit tests:
+```bash
+cd backend
+npm test
+```
+
+Run specific test files:
+```bash
+# Chat handler tests
+npm test -- tests/unit/chat-handler.test.ts
+
+# Quiz handler tests
+npm test -- tests/unit/quiz-handler.test.ts
+
+# Bedrock service tests
+npm test -- tests/unit/bedrock-service.test.ts
+
+# Search service tests
+npm test -- tests/unit/search-service.test.ts
+```
+
+### Property-Based Tests
+
+Run property-based tests (these validate correctness properties):
+
+```bash
+cd backend
+
+# Chat with Book properties (Properties 26-29)
+npm test -- tests/properties/chat-properties.test.ts --forceExit
+
+# Quiz Generator properties (Properties 30-35)
+npm test -- tests/properties/quiz-properties.test.ts --forceExit
+
+# Search properties (Properties 1-2)
+npm test -- tests/properties/search-properties.test.ts
+```
+
+**Note:** Use `--forceExit` flag for property tests to prevent hanging due to async operations.
+
+### Integration Tests
+
+Run end-to-end integration tests:
+
+```bash
+cd backend
+npm test -- tests/integration/search-flow.test.ts
+```
+
+### Run All Tests
+
+```bash
+cd backend
+npm test -- --forceExit
+```
+
+### Test Coverage
+
+Generate test coverage report:
+
+```bash
+cd backend
+npm run test:coverage
+```
+
+View coverage report at `backend/coverage/index.html`
+
+## Running the Application
+
+### Backend (Lambda Functions)
+
+The backend consists of AWS Lambda functions. For local development:
+
+1. **Set up environment variables:**
+
+```bash
+cd backend
+cp .env.example .env
+# Edit .env with your AWS credentials and configuration
+```
+
+2. **Build TypeScript:**
+
+```bash
+npm run build
+```
+
+3. **Deploy to AWS (requires AWS CDK):**
+
+```bash
+cd ../infrastructure
+npm install
+cdk deploy
+```
+
+### Frontend (React Application)
+
+1. **Set up environment variables:**
+
+```bash
+cd frontend
+cp .env.example .env
+# Edit .env with your API Gateway endpoint
+```
+
+2. **Start development server:**
 
 ```bash
 npm run dev
 ```
 
-The frontend will start at `http://localhost:5173` (or another port if 5173 is busy).
+The frontend will be available at `http://localhost:5173`
 
-### 3. Test Frontend Features
-
-#### Authentication Flow
-1. **Visit the app**: Open `http://localhost:5173`
-2. **Test Login Page**: 
-   - Click "Login" button in header
-   - Try entering email and password
-   - Note: Currently uses mock authentication (no real backend)
-   - Should redirect to home page after "login"
-
-3. **Test Signup Page**:
-   - Click "Sign Up" button
-   - Fill in name, email, password, confirm password
-   - Test validation (password mismatch, short password)
-   - Should redirect to home after signup
-
-4. **Test Protected Routes**:
-   - Try accessing `/library` without logging in → should redirect to login
-   - Try accessing `/book/123` without logging in → should redirect to login
-   - Login first, then access these routes → should work
-
-#### Navigation
-1. **Test Header Navigation**:
-   - Click Home, Search, Browse, My Library links
-   - Verify active state highlighting
-   - Test logout button (appears when logged in)
-
-2. **Test Responsive Layout**:
-   - Resize browser window
-   - Check mobile responsiveness
-
-#### Error Handling
-1. **Test Error Boundary**:
-   - The error boundary will catch any React errors
-   - Check browser console for any errors
-
-### 4. Build for Production
+3. **Build for production:**
 
 ```bash
 npm run build
 ```
 
-Should create optimized build in `dist/` folder.
+## Testing Individual Features
 
-### 5. Preview Production Build
+### 1. Chat with Book (RAG)
 
-```bash
-npm run preview
-```
-
----
-
-## Testing the Backend
-
-### 1. Install Dependencies
-
+**Backend Tests:**
 ```bash
 cd backend
-npm install
+npm test -- tests/unit/chat-handler.test.ts
+npm test -- tests/properties/chat-properties.test.ts --forceExit
 ```
 
-### 2. Run Unit Tests
+**Manual Testing:**
+1. Start the frontend: `cd frontend && npm run dev`
+2. Navigate to a book reader page
+3. Click "Chat with Book" button
+4. Ask questions about the book content
+5. Verify citations are displayed
+6. Test follow-up questions
 
+**What to verify:**
+- ✓ Chat session starts successfully
+- ✓ Questions receive answers within 3 seconds
+- ✓ Citations include chapter, section, and page numbers
+- ✓ Follow-up questions maintain context
+- ✓ "Not covered" message appears for out-of-scope questions
+
+### 2. Quiz Generator
+
+**Backend Tests:**
 ```bash
-npm test
+cd backend
+npm test -- tests/unit/quiz-handler.test.ts
+npm test -- tests/properties/quiz-properties.test.ts --forceExit
 ```
 
-This runs all unit tests including:
-- Ranking service tests
-- Query service tests
-- Search logic tests
+**Manual Testing:**
+1. Start the frontend: `cd frontend && npm run dev`
+2. Navigate to a book reader page
+3. Click "Test Me" button after reading a chapter
+4. Complete the quiz
+5. Submit and review results
 
-### 3. Run Specific Test Suites
+**What to verify:**
+- ✓ Quiz generates within 5 seconds
+- ✓ Exactly 5 questions with 4 options each (A, B, C, D)
+- ✓ Mix of question types (conceptual, code, scenario, etc.)
+- ✓ Score calculated correctly
+- ✓ Weak areas identified
+- ✓ Recommendations provided
+- ✓ Retake generates different questions
 
+### 3. Search Service
+
+**Backend Tests:**
 ```bash
-# Run only unit tests
-npm test -- tests/unit
-
-# Run only property tests
-npm test -- tests/properties
-
-# Run only integration tests
-npm test -- tests/integration
-
-# Run with coverage
-npm test -- --coverage
-
-# Run in watch mode
-npm test -- --watch
-```
-
-### 4. Run Property-Based Tests
-
-Property-based tests run 100 iterations with random inputs:
-
-```bash
+cd backend
+npm test -- tests/unit/search-service.test.ts
 npm test -- tests/properties/search-properties.test.ts
 ```
 
-Tests include:
-- **Property 1**: Search response time <2s
-- **Property 2**: Search result completeness
-- Result ordering by relevance
-- Pagination integrity
-- Filter correctness
+**Manual Testing:**
+1. Start the frontend
+2. Use the search bar
+3. Enter natural language queries
+4. Verify results appear within 2 seconds
+5. Check AI-generated explanations
 
-### 5. Build Backend
+### 4. Bedrock Integration
 
-```bash
-npm run build
-```
-
-Compiles TypeScript to JavaScript in `dist/` folder.
-
-### 6. Check for Type Errors
-
-```bash
-npx tsc --noEmit
-```
-
----
-
-## Testing Individual Services (Without AWS)
-
-Since the backend services require AWS infrastructure (OpenSearch, DynamoDB, Redis), here's how to test them locally:
-
-### Option 1: Mock Testing (Current Approach)
-
-The tests use mocks to simulate AWS services. Run:
-
+**Backend Tests:**
 ```bash
 cd backend
-npm test
+npm test -- tests/unit/bedrock-service.test.ts
 ```
 
-### Option 2: Local AWS Services (Advanced)
+**What to verify:**
+- ✓ Embeddings generated successfully
+- ✓ LLM responses received
+- ✓ Caching works (Redis)
+- ✓ Error handling and retries
 
-If you want to test with real services locally:
+## Test Results Summary
 
-#### 1. Start Local Redis
+### Expected Test Counts
 
+- **Unit Tests:** ~75+ tests
+  - Chat handler: 18 tests
+  - Quiz handler: 29 tests
+  - Bedrock service: 10+ tests
+  - Search service: 15+ tests
+
+- **Property-Based Tests:** ~20+ properties
+  - Chat properties: 8 properties (100 runs each)
+  - Quiz properties: 10 properties (100 runs each)
+  - Search properties: 4 properties (100 runs each)
+
+- **Integration Tests:** 5+ tests
+
+### Test Execution Time
+
+- Unit tests: ~5-10 seconds
+- Property-based tests: ~30-60 seconds (due to 100 iterations)
+- Integration tests: ~10-20 seconds
+
+## Troubleshooting
+
+### Tests Hanging
+
+If property-based tests hang:
 ```bash
-# Using Docker
-docker run -d -p 6379:6379 redis:latest
-
-# Or install Redis locally
-# macOS: brew install redis && redis-server
-# Linux: sudo apt-get install redis-server && redis-server
+npm test -- <test-file> --forceExit --detectOpenHandles
 ```
 
-#### 2. Start LocalStack (for AWS services)
+### AWS Credentials Issues
 
+Ensure AWS credentials are configured:
 ```bash
-# Install LocalStack
-pip install localstack
-
-# Start LocalStack with required services
-localstack start -d
-
-# Create local DynamoDB tables
-aws dynamodb create-table \
-  --table-name Users \
-  --attribute-definitions AttributeName=userId,AttributeType=S \
-  --key-schema AttributeName=userId,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST \
-  --endpoint-url http://localhost:4566
-```
-
-#### 3. Set Environment Variables
-
-```bash
-export REDIS_HOST=localhost
-export REDIS_PORT=6379
+aws configure
+# Or set environment variables:
+export AWS_ACCESS_KEY_ID=your_key
+export AWS_SECRET_ACCESS_KEY=your_secret
 export AWS_REGION=us-east-1
-export OPENSEARCH_ENDPOINT=http://localhost:9200
-export AWS_ENDPOINT=http://localhost:4566  # For LocalStack
 ```
 
----
+### Module Not Found Errors
 
-## Testing the Complete Flow (Frontend + Backend)
-
-### Prerequisites
-
-You'll need AWS credentials and deployed infrastructure for full integration testing.
-
-### 1. Deploy Backend to AWS
-
+Install dependencies:
 ```bash
-cd infrastructure
+# Root
 npm install
-cdk deploy
+
+# Backend
+cd backend && npm install
+
+# Frontend
+cd frontend && npm install
 ```
 
-This deploys:
-- Lambda functions
-- API Gateway
-- DynamoDB tables
-- OpenSearch cluster
-- Redis cluster
+### TypeScript Compilation Errors
 
-### 2. Update Frontend API URL
-
-Edit `frontend/.env`:
-
-```env
-VITE_API_URL=https://your-api-gateway-url.amazonaws.com/api
-```
-
-### 3. Test End-to-End
-
-1. Start frontend: `cd frontend && npm run dev`
-2. Test search flow:
-   - Enter search query
-   - View results with AI explanations
-   - Click on a result (tracks interaction)
-3. Test user profile:
-   - View personalized recommendations
-   - Check reading history
-
----
-
-## Quick Test Checklist
-
-### Frontend ✓
-- [ ] App builds without errors: `cd frontend && npm run build`
-- [ ] Dev server starts: `npm run dev`
-- [ ] Can navigate between pages
-- [ ] Login/Signup forms work
-- [ ] Protected routes redirect to login
-- [ ] Logout functionality works
-- [ ] No console errors
-
-### Backend ✓
-- [ ] Code compiles: `cd backend && npm run build`
-- [ ] Unit tests pass: `npm test -- tests/unit`
-- [ ] Property tests pass: `npm test -- tests/properties`
-- [ ] Integration tests pass: `npm test -- tests/integration`
-- [ ] No TypeScript errors: `npx tsc --noEmit`
-
----
-
-## Common Issues & Solutions
-
-### Frontend Issues
-
-**Issue**: `Module not found` errors
-```bash
-cd frontend
-rm -rf node_modules package-lock.json
-npm install
-```
-
-**Issue**: Port already in use
-```bash
-# Vite will automatically try the next available port
-# Or specify a port: npm run dev -- --port 3000
-```
-
-**Issue**: Build fails
-```bash
-# Check for TypeScript errors
-npx tsc --noEmit
-```
-
-### Backend Issues
-
-**Issue**: Tests fail with "Cannot find module"
+Rebuild TypeScript:
 ```bash
 cd backend
-npm install
-```
-
-**Issue**: Redis connection errors in tests
-- Tests use mocks by default, so Redis isn't required
-- If you see Redis errors, check that mocks are properly set up
-
-**Issue**: AWS SDK errors
-- For local testing, AWS credentials aren't required (tests use mocks)
-- For real AWS testing, configure: `aws configure`
-
----
-
-## Performance Testing
-
-### Frontend Performance
-
-```bash
-cd frontend
 npm run build
-npm run preview
-
-# Use Lighthouse in Chrome DevTools
-# Or use: npx lighthouse http://localhost:4173
 ```
-
-### Backend Performance
-
-Property tests include performance checks:
-- Search response time must be <2s
-- Run with: `npm test -- tests/properties`
-
----
 
 ## Continuous Integration
 
-### GitHub Actions Example
+For CI/CD pipelines, run:
 
-Create `.github/workflows/test.yml`:
+```bash
+# Install all dependencies
+npm install
+cd backend && npm install
+cd ../frontend && npm install
 
-```yaml
-name: Test
+# Run all tests
+cd ../backend
+npm test -- --forceExit --coverage
 
-on: [push, pull_request]
-
-jobs:
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - run: cd frontend && npm install
-      - run: cd frontend && npm run build
-      
-  backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - run: cd backend && npm install
-      - run: cd backend && npm test
-      - run: cd backend && npm run build
+# Build
+npm run build
 ```
 
----
+## Performance Testing
+
+To test performance:
+
+```bash
+# Run property tests with more iterations
+cd backend
+npm test -- tests/properties/chat-properties.test.ts --forceExit
+
+# Monitor response times in test output
+```
 
 ## Next Steps
 
-Once you've tested the current implementation:
+1. **Run all tests** to ensure everything works
+2. **Deploy to AWS** using CDK
+3. **Test in production** environment
+4. **Monitor** CloudWatch logs for errors
+5. **Iterate** based on test results
 
-1. **Deploy to AWS**: Set up infrastructure (Task 1)
-2. **Implement Frontend Search UI**: Task 6
-3. **Add Book Reader**: Task 7
-4. **Implement RAG Chat**: Task 10
-5. **Add Quiz Generator**: Task 11
+## Quick Start Commands
 
----
+```bash
+# Complete test run
+cd backend && npm test -- --forceExit
 
-## Getting Help
+# Start development
+cd frontend && npm run dev
 
-If you encounter issues:
+# Deploy to AWS
+cd infrastructure && cdk deploy
+```
 
-1. Check the console for error messages
-2. Verify all dependencies are installed
-3. Ensure you're using Node.js 18+ and npm 9+
-4. Check that ports 5173 (frontend) and 6379 (Redis) are available
-5. Review the error logs in the terminal
+## Support
 
-For AWS-related issues:
-- Verify AWS credentials: `aws sts get-caller-identity`
-- Check AWS region is set: `echo $AWS_REGION`
-- Ensure required AWS services are enabled in your account
+For issues or questions:
+1. Check test output for specific errors
+2. Review CloudWatch logs (for deployed functions)
+3. Verify AWS credentials and permissions
+4. Ensure all dependencies are installed

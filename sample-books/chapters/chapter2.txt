@@ -1,0 +1,140 @@
+# Chapter 2: Basic Types and Variables
+
+## TypeScript's Type System
+
+TypeScript provides several basic types that form the foundation of the type system.
+
+## Primitive Types
+
+### String
+```typescript
+let name: string = "Alice";
+let greeting: string = `Hello, ${name}!`;
+```
+
+### Number
+```typescript
+let age: number = 25;
+let price: number = 99.99;
+let hex: number = 0xf00d;
+```
+
+### Boolean
+```typescript
+let isActive: boolean = true;
+let hasPermission: boolean = false;
+```
+
+### Null and Undefined
+```typescript
+let nothing: null = null;
+let notDefined: undefined = undefined;
+```
+
+## Arrays
+
+TypeScript provides two ways to define arrays:
+
+```typescript
+// Using square brackets
+let numbers: number[] = [1, 2, 3, 4, 5];
+
+// Using generic Array type
+let names: Array<string> = ["Alice", "Bob", "Charlie"];
+```
+
+## Tuples
+
+Tuples allow you to express an array with a fixed number of elements:
+
+```typescript
+let person: [string, number] = ["Alice", 25];
+let coordinate: [number, number] = [10, 20];
+```
+
+## Enums
+
+Enums allow you to define a set of named constants:
+
+```typescript
+enum Color {
+  Red,
+  Green,
+  Blue
+}
+
+let favoriteColor: Color = Color.Blue;
+
+enum Status {
+  Active = "ACTIVE",
+  Inactive = "INACTIVE",
+  Pending = "PENDING"
+}
+```
+
+## Any and Unknown
+
+### Any
+The `any` type opts out of type checking:
+
+```typescript
+let value: any = 42;
+value = "hello";
+value = true; // All valid
+```
+
+### Unknown
+The `unknown` type is safer than `any`:
+
+```typescript
+let value: unknown = 42;
+
+// Type checking required before use
+if (typeof value === "string") {
+  console.log(value.toUpperCase());
+}
+```
+
+## Type Inference
+
+TypeScript can infer types automatically:
+
+```typescript
+let message = "Hello"; // inferred as string
+let count = 42; // inferred as number
+let isValid = true; // inferred as boolean
+```
+
+## Union Types
+
+Variables can have multiple possible types:
+
+```typescript
+let id: string | number;
+id = "ABC123"; // valid
+id = 12345; // also valid
+```
+
+## Type Aliases
+
+Create custom type names:
+
+```typescript
+type ID = string | number;
+type Point = { x: number; y: number };
+
+let userId: ID = "user-123";
+let position: Point = { x: 10, y: 20 };
+```
+
+## Summary
+
+In this chapter, you learned about:
+- Primitive types (string, number, boolean)
+- Arrays and tuples
+- Enums for named constants
+- The any and unknown types
+- Type inference
+- Union types and type aliases
+
+Next, we'll explore functions and interfaces in TypeScript.

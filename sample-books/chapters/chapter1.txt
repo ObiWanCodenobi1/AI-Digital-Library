@@ -1,0 +1,80 @@
+# Chapter 1: Getting Started with TypeScript
+
+## Introduction
+
+TypeScript is a strongly typed programming language that builds on JavaScript, giving you better tooling at any scale. It was developed and is maintained by Microsoft.
+
+## Why TypeScript?
+
+TypeScript adds optional static typing to JavaScript. This means you can catch errors early in development, before your code runs. Here are some key benefits:
+
+- **Type Safety**: Catch errors at compile time instead of runtime
+- **Better IDE Support**: Enhanced autocomplete and refactoring
+- **Improved Code Quality**: Self-documenting code with type annotations
+- **Easier Refactoring**: Confidence when making changes to large codebases
+
+## Installing TypeScript
+
+To get started with TypeScript, you'll need Node.js installed. Then run:
+
+```bash
+npm install -g typescript
+```
+
+Verify the installation:
+
+```bash
+tsc --version
+```
+
+## Your First TypeScript Program
+
+Create a file called `hello.ts`:
+
+```typescript
+function greet(name: string): string {
+  return `Hello, ${name}!`;
+}
+
+const message = greet("World");
+console.log(message);
+```
+
+Compile it to JavaScript:
+
+```bash
+tsc hello.ts
+```
+
+This creates a `hello.js` file that you can run with Node.js:
+
+```bash
+node hello.js
+```
+
+## TypeScript Configuration
+
+Create a `tsconfig.json` file to configure the TypeScript compiler:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}
+```
+
+## Summary
+
+In this chapter, you learned:
+- What TypeScript is and why it's useful
+- How to install TypeScript
+- How to write and compile your first TypeScript program
+- How to configure the TypeScript compiler
+
+In the next chapter, we'll dive deeper into TypeScript's type system.
